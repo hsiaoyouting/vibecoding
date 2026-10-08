@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>傅立葉合成器 · 用旋轉的圓疊出方波</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#F1F5F2;--panel:#FFFFFF;--ink:#14263B;--mute:#5E6E80;--line:#CBD6D0;--blue:#2447D6;--amber:#E8A317;--ghost:#9AA8B5;--ok:#1E8E5A;--bad:#C23B3B}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.7 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:28px 18px 64px}
+h1{font:900 clamp(30px,5vw,48px)/1.2 "Noto Serif TC","Songti TC",serif;margin:8px 0 6px;letter-spacing:.02em}
+h2{font:700 22px/1.4 "Noto Serif TC","Songti TC",serif;margin:0 0 10px}
+.lead{color:var(--mute);max-width:46em;margin:0 0 24px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin:0 0 20px}
+.stage{width:100%;display:block;border:1px solid var(--line);border-radius:6px;
+ background-color:#FBFDFC;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:40px 40px;background-position:-1px -1px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px 28px;margin-top:16px;align-items:end}
+label{display:block;font-weight:500;margin-bottom:4px}
+output{font-variant-numeric:tabular-nums;color:var(--blue);font-weight:700}
+input[type=range]{width:100%;accent-color:var(--blue)}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border:1.5px solid var(--ink);background:#fff;color:var(--ink);border-radius:6px;padding:6px 14px}
+button:hover{background:#E8EEF9}
+button[aria-pressed=true]{background:var(--ink);color:#fff}
+:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.formula{font:500 17px/1.6 "Noto Serif TC",serif;margin:12px 0 0;padding:10px 14px;background:#EEF2FB;border-left:4px solid var(--blue);overflow-x:auto;white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.stat{border:1px solid var(--line);border-radius:6px;padding:10px 14px}
+.stat b{display:block;font-size:26px;line-height:1.3;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mute);font-size:14px}
+.note{color:var(--mute);font-size:15px;margin:12px 0 0}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--mute);margin:10px 0 0}
+.legend i{display:inline-block;width:22px;height:0;border-top:3px solid;vertical-align:middle;margin-right:6px}
+#qbox .q{font-weight:700;margin:6px 0 12px}
+#qbox .opts{display:grid;gap:8px}
+#qbox .opts button{text-align:left}
+#qbox .opts button.right{background:var(--ok);border-color:var(--ok);color:#fff}
+#qbox .opts button.wrong{background:var(--bad);border-color:var(--bad);color:#fff}
+#why{min-height:3.4em;margin:12px 0 0;color:var(--mute)}
+footer{color:var(--mute);font-size:14px;margin-top:28px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+<h1>傅立葉合成器</h1>
+<p class="lead">任何週期波形，都能拆成一串不同轉速的圓。下方每個圓代表一個諧波：把圓一個接一個串起來，最後一個圓的尖端高度，就是疊加後的波形。</p>
+
+<section aria-labelledby="h-syn">
+ <h2 id="h-syn">1. 旋轉圓與時域波形</h2>
+ <canvas id="cv" class="stage" width="1000" height="380" role="img" aria-label="旋轉的圓串與其產生的波形"></canvas>
+ <div class="legend"><span><i style="border-color:var(--blue)"></i>諧波疊加結果</span><span><i style="border-color:var(--ghost);border-top-style:dashed"></i>理想波形</span><span><i style="border-color:var(--amber)"></i>各諧波圓</span></div>
+ <div class="controls">
+  <div><label>波形</label>
+   <div class="seg" id="wsel">
+    <button data-w="square" aria-pressed="true">方波</button>
+    <button data-w="triangle" aria-pressed="false">三角波</button>
+    <button data-w="saw" aria-pressed="false">鋸齒波</button>
+   </div></div>
+  <div><label for="n">諧波項數 N：<output id="nv">5</output></label>
+   <input id="n" type="range" min="1" max="40" value="5"></div>
+  <div><label for="sp">轉速：<output id="spv">1.0×</output></label>
+   <input id="sp" type="range" min="0" max="3" step="0.1" value="1"></div>
+  <div class="seg"><button id="play" aria-pressed="true">暫停</button><button id="snd" aria-pressed="false">聽聽看</button></div>
+ </div>
+ <p class="formula" id="fm"></p>
+</section>
+
+<section aria-labelledby="h-spec">
+ <h2 id="h-spec">2. 頻譜：每個諧波有多大</h2>
+ <canvas id="sp2" class="stage" width="1000" height="200" role="img" aria-label="前 24 個諧波的振幅長條圖"></canvas>
+ <p class="note">藍色長條是目前用到的諧波，灰色外框是理論上該有的大小。方波與三角波只有奇次諧波；鋸齒波每一次都有。</p>
+</section>
+
+<section aria-labelledby="h-st">
+ <h2 id="h-st">3. 逼近得多準？</h2>
+ <div class="stats">
+  <div class="stat"><b id="s1">–</b><span>最高用到的諧波次數 k</span></div>
+  <div class="stat"><b id="s2">–</b><span>與理想波形的均方根誤差</span></div>
+  <div class="stat"><b id="s3">–</b><span>波峰過衝（占跳變幅度）</span></div>
+ </div>
+ <p class="note">把方波的 N 拉到 40：誤差持續下降，但轉折處的過衝停在約 9%，不會消失。這就是吉布斯現象。</p>
+</section>
+
+<section aria-labelledby="h-q">
+ <h2 id="h-q">4. 小測驗</h2>
+ <div id="qbox"></div>
+</section>
+<footer>純 HTML / Canvas，無外部程式庫。把這個檔案存成 index.html 上傳到 GitHub 即可用 GitHub Pages 發佈。</footer>
+</main>
+
+<script>
+const PI=Math.PI, $=id=>document.getElementById(id);
+const WAVES={
+ square:{amp:k=>k%2?4/(PI*k):0, ideal:x=>Math.sin(x)>=0?1:-1, jump:2,
+  fm:'f(x) = 4/π · [ sin x + sin 3x / 3 + sin 5x / 5 + … ]'},
+ triangle:{amp:k=>k%2?8/(PI*PI*k*k)*(k%4===1?1:-1):0, ideal:x=>2/PI*Math.asin(Math.sin(x)), jump:0,
+  fm:'f(x) = 8/π² · [ sin x − sin 3x / 9 + sin 5x / 25 − … ]'},
+ saw:{amp:k=>2/(PI*k)*(k%2?1:-1), ideal:x=>(((x+PI)%(2*PI)+2*PI)%(2*PI)-PI)/PI, jump:2,
+  fm:'f(x) = 2/π · [ sin x − sin 2x / 2 + sin 3x / 3 − … ]'}
+};
+let wave='square', N=5, speed=1, playing=!matchMedia('(prefers-reduced-motion:reduce)').matches, t=0, last=0;
+
+const terms=()=>{const a=[];for(let k=1;a.length<N&&k<400;k++){const v=WAVES[wave].amp(k);if(v)a.push({k,a:v});}return a;};
+const sumAt=(x,T)=>T.reduce((s,m)=>s+m.a*Math.sin(m.k*x),0);
+
+/* ---------- 旋轉圓 ---------- */
+const cv=$('cv'),cx=cv.getContext('2d');
+function drawMain(){
+ const T=terms(),W=cv.width,H=cv.height,X0=400,XE=W-24,CX=180,CY=H/2,U=120;
+ cx.clearRect(0,0,W,H);
+ let x=CX,y=CY;
+ cx.lineWidth=1.5;
+ for(const m of T){
+  const r=Math.abs(m.a)*U, nx=x+m.a*U*Math.cos(m.k*t), ny=y-m.a*U*Math.sin(m.k*t);
+  cx.strokeStyle='rgba(232,163,23,.85)';
+  cx.beginPath();cx.arc(x,y,r,0,2*PI);cx.stroke();
+  cx.beginPath();cx.moveTo(x,y);cx.lineTo(nx,ny);cx.stroke();
+  x=nx;y=ny;
+ }
+ cx.fillStyle='#2447D6';cx.beginPath();cx.arc(x,y,5,0,2*PI);cx.fill();
+ // 連接線
+ cx.setLineDash([5,5]);cx.strokeStyle='#2447D6';cx.lineWidth=1.2;
+ cx.beginPath();cx.moveTo(x,y);cx.lineTo(X0,y);cx.stroke();
+ // 理想波形
+ cx.strokeStyle='#9AA8B5';cx.lineWidth=2;
+ cx.beginPath();
+ for(let px=X0;px<=XE;px++){const u=(px-X0)/(XE-X0)*4*PI,v=CY-WAVES[wave].ideal(t-u)*U;px===X0?cx.moveTo(px,v):cx.lineTo(px,v);}
+ cx.stroke();cx.setLineDash([]);
+ // 疊加波形
+ cx.strokeStyle='#2447D6';cx.lineWidth=3;cx.lineJoin='round';
+ cx.beginPath();
+ for(let px=X0;px<=XE;px++){const u=(px-X0)/(XE-X0)*4*PI,v=CY-sumAt(t-u,T)*U;px===X0?cx.moveTo(px,v):cx.lineTo(px,v);}
+ cx.stroke();
+}
+
+/* ---------- 頻譜 ---------- */
+const sc=$('sp2'),sx=sc.getContext('2d');
+function drawSpec(){
+ const K=24,W=sc.width,H=sc.height,base=H-34,top=18,a1=Math.abs(WAVES[wave].amp(1)),slot=(W-40)/K,used=new Set(terms().map(m=>m.k));
+ sx.clearRect(0,0,W,H);
+ sx.font='14px "Noto Sans TC",sans-serif';sx.textAlign='center';
+ for(let k=1;k<=K;k++){
+  const a=Math.abs(WAVES[wave].amp(k)),h=a/a1*(base-top),bx=20+(k-1)*slot+slot*.15,bw=slot*.7;
+  if(a){sx.strokeStyle='#9AA8B5';sx.lineWidth=1.5;sx.strokeRect(bx,base-h,bw,h);
+   if(used.has(k)){sx.fillStyle='#2447D6';sx.fillRect(bx,base-h,bw,h);}}
+  sx.fillStyle=used.has(k)?'#14263B':'#5E6E80';sx.fillText(k,bx+bw/2,H-12);
+ }
+ sx.strokeStyle='#14263B';sx.lineWidth=1.5;sx.beginPath();sx.moveTo(14,base);sx.lineTo(W-14,base);sx.stroke();
+}
+
+/* ---------- 數據 ---------- */
+function stats(){
+ const T=terms(),M=1440;let mx=-9,se=0;
+ for(let i=0;i<M;i++){const x=-PI+(i+.5)*2*PI/M,s=sumAt(x,T),d=s-WAVES[wave].ideal(x);if(s>mx)mx=s;se+=d*d;}
+ $('s1').textContent=T[T.length-1].k;
+ $('s2').textContent=Math.sqrt(se/M).toFixed(3);
+ const j=WAVES[wave].jump;
+ $('s3').textContent=j?Math.max(0,(mx-1)/j*100).toFixed(1)+'%':'無跳變';
+}
+
+/* ---------- 聲音 ---------- */
+let ac=null,nodes=[],soundOn=false;
+function stopSound(){nodes.forEach(o=>{try{o.stop()}catch(e){}});nodes=[];}
+function startSound(){
+ stopSound();
+ if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+ const master=ac.createGain();master.gain.value=.18;master.connect(ac.destination);
+ for(const m of terms()){
+  const f=220*m.k;if(f>9000)continue;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.frequency.value=f;g.gain.value=m.a;o.connect(g);g.connect(master);o.start();nodes.push(o);
+ }
+}
+
+/* ---------- 控制 ---------- */
+function refresh(){
+ $('fm').textContent=WAVES[wave].fm;
+ drawSpec();stats();drawMain();
+ if(soundOn)startSound();
+}
+$('wsel').addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ wave=b.dataset.w;
+ [...$('wsel').children].forEach(c=>c.setAttribute('aria-pressed',c===b));
+ refresh();
+});
+$('n').addEventListener('input',e=>{N=+e.target.value;$('nv').textContent=N;refresh();});
+$('sp').addEventListener('input',e=>{speed=+e.target.value;$('spv').textContent=speed.toFixed(1)+'×';});
+$('play').addEventListener('click',()=>{playing=!playing;$('play').textContent=playing?'暫停':'播放';$('play').setAttribute('aria-pressed',playing);});
+$('snd').addEventListener('click',()=>{
+ soundOn=!soundOn;$('snd').setAttribute('aria-pressed',soundOn);$('snd').textContent=soundOn?'停止聲音':'聽聽看';
+ soundOn?startSound():stopSound();
+});
+function loop(ts){
+ const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+ if(playing){t+=dt*speed*1.6;drawMain();}
+ requestAnimationFrame(loop);
+}
+$('play').textContent=playing?'暫停':'播放';$('play').setAttribute('aria-pressed',playing);
+
+/* ---------- 測驗 ---------- */
+const QS=[
+ {q:'方波的傅立葉級數只包含哪些諧波？',o:['只有奇次諧波','只有偶次諧波','所有整數次諧波','只有基頻'],a:0,w:'方波有半週期對稱性，偶次諧波剛好互相抵消，只剩 1、3、5… 次。'},
+ {q:'增加諧波項數 N，疊加波形會怎樣？',o:['整體越來越接近理想波形','完全不變','振幅越來越小','頻率越來越高'],a:0,w:'項數越多，高頻細節越完整，均方根誤差持續下降。'},
+ {q:'方波在轉折處的過衝（吉布斯現象），約為跳變幅度的多少？',o:['約 9%','約 1%','約 50%','N 夠大就會變成 0'],a:0,w:'過衝約 8.95%，N 再大也只是變窄，高度不會消失。'},
+ {q:'為什麼三角波用很少的項就很像了？',o:['諧波振幅以 1/k² 衰減，比方波的 1/k 快','三角波沒有基頻','三角波頻率比較低','三角波只用偶次諧波'],a:0,w:'振幅衰減得快，高次諧波貢獻很小；而且三角波連續、沒有跳變。'},
+ {q:'第 3 次諧波的圓，轉速是基頻圓的幾倍？',o:['3 倍','1/3 倍','9 倍','一樣快'],a:0,w:'第 k 次諧波的角頻率就是基頻的 k 倍，所以高次的圓轉得快、半徑也小。'}
+];
+let qi=0,score=0;
+function showQ(){
+ const box=$('qbox');
+ if(qi>=QS.length){
+  box.innerHTML='<p class="q">完成！你答對 '+score+' / '+QS.length+' 題。</p><button id="rq">再測一次</button>';
+  $('rq').onclick=()=>{qi=0;score=0;showQ();};return;
+ }
+ const Q=QS[qi];
+ box.innerHTML='<div class="note">第 '+(qi+1)+' / '+QS.length+' 題</div><p class="q">'+Q.q+'</p><div class="opts"></div><p id="why" aria-live="polite"></p><button id="nx" hidden>'+(qi===QS.length-1?'看結果':'下一題')+'</button>';
+ const opts=box.querySelector('.opts');
+ Q.o.forEach((txt,i)=>{
+  const b=document.createElement('button');b.textContent=txt;
+  b.onclick=()=>{
+   if(opts.dataset.done)return;opts.dataset.done=1;
+   if(i===Q.a){score++;b.classList.add('right');}
+   else{b.classList.add('wrong');opts.children[Q.a].classList.add('right');}
+   $('why').textContent=Q.w;$('nx').hidden=false;$('nx').focus();
+  };
+  opts.appendChild(b);
+ });
+ $('nx').onclick=()=>{qi++;showQ();};
+}
+showQ();refresh();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
